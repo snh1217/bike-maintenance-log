@@ -116,4 +116,24 @@ with tab2:
                 # 날짜 기준 내림차순 정렬 (최신 날짜가 위로)
                 if '날짜' in df.columns:
                     df['날짜'] = pd.to_datetime(df['날짜']).dt.date # 시간 빼고 날짜만
-                    df = df.sort_values(
+                    df = df.sort_values(by='날짜', ascending=False)
+                
+                # --- 상단 요약 통계 ---
+                total_cost = df['비용(원)'].sum() if '비용(원)' in df.columns else 0
+                total_count = len(df)
+                
+                m1, m2, m3 = st.columns(3)
+                m1.metric("총 누적 정비비", f"{total_cost:,.0f}원")
+                m2.metric("총 정비 횟수", f"{total_count}회")
+                if not df.empty:
+                    m3.metric("최근 정비 항목", df.iloc[0]['항목'])
+                
+                st.divider()
+
+                # --- 데이터 테이블 ---
+                st.dataframe(df, use_container_width=True, hide_index=True)
+            else:
+                st.info("아직 저장된 정비 기록이 없습니다. '정비 입력' 탭에서 첫 기록을 남겨보세요!")
+                
+        except Exception as e:
+            st.warning("데이터를 불러오는 중입니다. (혹은 시트 헤더가 비어있을 수 있습니다)")
