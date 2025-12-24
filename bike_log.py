@@ -56,14 +56,32 @@ def get_google_sheet():
 
 def get_notebooklm_credentials():
     try:
-        notebooklm = st.secrets["notebooklm"]
-        api_key = notebooklm.get("api_key")
-        endpoint = notebooklm.get("endpoint")
-        if not api_key or not endpoint:
-            raise ValueError("API 키 또는 엔드포인트가 비어 있습니다.")
-        return endpoint, api_key
+        notebooklm = st.secrets.get("notebooklm")
     except Exception as e:
-        raise RuntimeError(f"NotebookLM API 설정을 불러올 수 없습니다: {e}")
+        st.error(
+            "NotebookLM API 설정을 불러올 수 없습니다. `.streamlit/secrets.toml` 파일을 "
+            "생성하고 `notebooklm` 섹션에 `endpoint`와 `api_key`를 추가한 뒤 다시 시도해주세요."
+        )
+        st.exception(e)
+        return None, None
+
+    if not notebooklm:
+        st.error(
+            "NotebookLM API 설정이 비어 있습니다. `.streamlit/secrets.toml`에 아래 예시처럼 추가해주세요:\n"
+            """\n[notebooklm]\nendpoint = "https://api.example.com"\napi_key = "YOUR_KEY""""\n"
+        )
+        return None, None
+
+    api_key = notebooklm.get("api_key")
+    endpoint = notebooklm.get("endpoint")
+
+    if not api_key or not endpoint:
+        st.error(
+            "NotebookLM API 설정이 누락되었습니다. `endpoint`와 `api_key` 값을 확인해주세요."
+        )
+        return None, None
+
+    return endpoint, api_key
 
 
 def build_notebooklm_prompt(keyword: str, model: str, symptom: str) -> str:
@@ -79,6 +97,10 @@ def build_notebooklm_prompt(keyword: str, model: str, symptom: str) -> str:
 @st.cache_data(show_spinner=False)
 def search_notebooklm(keyword: str, model: str, symptom: str):
     endpoint, api_key = get_notebooklm_credentials()
+    if not endpoint or not api_key:
+        return {
+            "error": "NotebookLM API 설정이 필요합니다. `.streamlit/secrets.toml` 파일을 확인한 후 다시 검색해주세요.",
+        }
     prompt = build_notebooklm_prompt(keyword, model, symptom)
 
     headers = {
@@ -245,18 +267,24 @@ with tab3:
 
             summary = None
             links = []
+            had_error = False
 
             if isinstance(result, dict):
-                summary = result.get("summary") or result.get("answer") or result.get("message")
-                links = result.get("links") or result.get("documents") or []
+                if result.get("error"):
+                    st.error(result.get("error"))
+                    had_error = True
+                else:
+                    summary = result.get("summary") or result.get("answer") or result.get("message")
+                    links = result.get("links") or result.get("documents") or []
             else:
                 summary = str(result)
 
-            if summary:
-                st.success("검색 결과")
-                st.write(summary)
-            else:
-                st.warning("요약 결과를 찾을 수 없습니다. API 응답을 확인하세요.")
+            if not had_error:
+                if summary:
+                    st.success("검색 결과")
+                    st.write(summary)
+                else:
+                    st.warning("요약 결과를 찾을 수 없습니다. API 응답을 확인하세요.")
 
             if links:
                 st.markdown("### 📎 관련 문서")
