@@ -1,8 +1,12 @@
 import streamlit as st
 import pandas as pd
-import gspread
 import requests
 from datetime import datetime
+
+try:
+    import gspread
+except ModuleNotFoundError:
+    gspread = None
 
 # --------------------------------------------------------------------------
 # 1. 페이지 및 기본 설정 (제목 변경 완료)
@@ -30,6 +34,12 @@ with st.expander("ℹ️ 실행 방법", expanded=False):
 # --------------------------------------------------------------------------
 @st.cache_resource
 def get_google_sheet():
+    if gspread is None:
+        st.error(
+            "⚠️ gspread 모듈을 찾을 수 없습니다. `pip install -r requirements.txt` 명령으로 "
+            "필수 패키지를 설치한 뒤 다시 시도해주세요."
+        )
+        return None
     try:
         credentials = st.secrets["gcp_service_account"]
         gc = gspread.service_account_from_dict(credentials)
