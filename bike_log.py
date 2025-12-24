@@ -10,6 +10,21 @@ from datetime import datetime
 st.set_page_config(page_title="개인 정비노트", page_icon="🏍️", layout="wide")
 st.title("🏍️ 개인 정비노트")
 
+with st.expander("ℹ️ 실행 방법", expanded=False):
+    st.markdown(
+        """
+        1. 필요한 패키지를 설치합니다.
+           ```bash
+           pip install -r requirements.txt
+           ```
+        2. `.streamlit/secrets.toml` 파일에 `gcp_service_account` 및 `notebooklm` 설정을 추가합니다.
+        3. 아래 명령으로 앱을 실행합니다.
+           ```bash
+           streamlit run bike_log.py
+           ```
+        """
+    )
+
 # --------------------------------------------------------------------------
 # 2. 구글 시트 연결 함수
 # --------------------------------------------------------------------------
