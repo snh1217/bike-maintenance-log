@@ -1,6 +1,7 @@
 import streamlit as st
 import pandas as pd
 import gspread
+import requests
 from datetime import datetime
 
 # --------------------------------------------------------------------------
@@ -24,9 +25,59 @@ def get_google_sheet():
         return None
 
 # --------------------------------------------------------------------------
-# 3. 탭 구성
+# 3. 노트북LM API 클라이언트
 # --------------------------------------------------------------------------
-tab1, tab2 = st.tabs(["📝 정비 입력", "📋 전체 내역 조회"])
+
+
+def get_notebooklm_credentials():
+    try:
+        notebooklm = st.secrets["notebooklm"]
+        api_key = notebooklm.get("api_key")
+        endpoint = notebooklm.get("endpoint")
+        if not api_key or not endpoint:
+            raise ValueError("API 키 또는 엔드포인트가 비어 있습니다.")
+        return endpoint, api_key
+    except Exception as e:
+        raise RuntimeError(f"NotebookLM API 설정을 불러올 수 없습니다: {e}")
+
+
+def build_notebooklm_prompt(keyword: str, model: str, symptom: str) -> str:
+    return (
+        "다음 정보를 바탕으로 오토바이 정비 매뉴얼 요약과 진단 가이드를 제공해 주세요.\n"
+        "- 사용자가 찾는 키워드: {keyword}\n"
+        "- 차량 모델: {model}\n"
+        "- 증상/상태: {symptom}\n"
+        "필요하다면 추가로 참고할 수 있는 매뉴얼 또는 문서 링크를 함께 제시해 주세요."
+    ).format(keyword=keyword or "(미입력)", model=model or "(미입력)", symptom=symptom or "(미입력)")
+
+
+@st.cache_data(show_spinner=False)
+def search_notebooklm(keyword: str, model: str, symptom: str):
+    endpoint, api_key = get_notebooklm_credentials()
+    prompt = build_notebooklm_prompt(keyword, model, symptom)
+
+    headers = {
+        "Authorization": f"Bearer {api_key}",
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "prompt": prompt,
+        "context": {
+            "keyword": keyword,
+            "model": model,
+            "symptom": symptom,
+        },
+    }
+
+    response = requests.post(endpoint, headers=headers, json=payload, timeout=20)
+    response.raise_for_status()
+    return response.json()
+
+
+# --------------------------------------------------------------------------
+# 4. 탭 구성
+# --------------------------------------------------------------------------
+tab1, tab2, tab3 = st.tabs(["📝 정비 입력", "📋 전체 내역 조회", "🔍 매뉴얼/진단"])
 
 # ==========================================================================
 # [탭 1] 새로운 정비 내용 입력
@@ -125,3 +176,75 @@ with tab2:
                 st.info("데이터가 없습니다.")
         except Exception as e:
             st.warning("데이터 로딩 중...")
+
+# ==========================================================================
+# [탭 3] 매뉴얼/진단 검색
+# ==========================================================================
+with tab3:
+    st.subheader("🔍 NotebookLM 기반 매뉴얼/진단 검색")
+    st.caption("키워드, 차종, 증상을 입력하면 NotebookLM API로 관련 요약과 참고 링크를 받아옵니다.")
+
+    c1, c2 = st.columns(2)
+    with c1:
+        keyword = st.text_input("검색 키워드", placeholder="예: 체인 장력 조정 방법")
+        model = st.selectbox(
+            "차량 모델",
+            ["존테스 350D", "혼다 PCX", "야마하 NMAX", "가와사키 Z시리즈", "기타"],
+            index=0,
+        )
+    with c2:
+        symptom = st.selectbox(
+            "증상/상태",
+            [
+                "시동 불량",
+                "이상 진동",
+                "브레이크 소음",
+                "체인/벨트 문제",
+                "전기장치 경고",
+                "기타",
+            ],
+            index=0,
+        )
+        clear_cache = st.button("🧹 NotebookLM 검색 캐시 초기화", use_container_width=True)
+
+    if clear_cache:
+        search_notebooklm.clear()
+        st.info("검색 결과 캐시를 초기화했습니다. 동일한 쿼리도 새로 조회합니다.")
+
+    search_button = st.button("🔍 NotebookLM으로 검색", type="primary", use_container_width=True)
+
+    if search_button:
+        try:
+            with st.spinner("NotebookLM에서 검색 중..."):
+                result = search_notebooklm(keyword, model, symptom)
+
+            summary = None
+            links = []
+
+            if isinstance(result, dict):
+                summary = result.get("summary") or result.get("answer") or result.get("message")
+                links = result.get("links") or result.get("documents") or []
+            else:
+                summary = str(result)
+
+            if summary:
+                st.success("검색 결과")
+                st.write(summary)
+            else:
+                st.warning("요약 결과를 찾을 수 없습니다. API 응답을 확인하세요.")
+
+            if links:
+                st.markdown("### 📎 관련 문서")
+                for item in links:
+                    if isinstance(item, dict):
+                        title = item.get("title") or item.get("name") or "관련 문서"
+                        url = item.get("url") or item.get("link")
+                        if url:
+                            st.markdown(f"- [{title}]({url})")
+                        else:
+                            st.markdown(f"- {title}")
+                    else:
+                        st.markdown(f"- {item}")
+        except Exception as e:
+            st.error("NotebookLM 검색 중 오류가 발생했습니다. 설정과 입력값을 확인하세요.")
+            st.exception(e)
